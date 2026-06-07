@@ -20,14 +20,20 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
     "Topic :: Software Development :: Libraries",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "ruff>=0.4"]
+# The test suite uses the standard-library ``unittest`` module and needs no
+# third-party test runner: ``python -m unittest discover -s tests``.
+dev = ["ruff>=0.4"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agent_context_trim"]
+# Ship the PEP 561 marker so downstream type checkers pick up our hints.
+artifacts = ["src/agent_context_trim/py.typed"]
 
 [tool.ruff]
 line-length = 88

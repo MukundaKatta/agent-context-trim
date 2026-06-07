@@ -4,6 +4,10 @@ Trim LLM message arrays to fit within a token budget.
 
 Removes oldest messages (excluding system prompts by default) until the estimated token count falls below a target budget. The token estimator is pluggable — the built-in default uses a word-based heuristic.
 
+- Zero runtime dependencies (pure standard library).
+- Ships type hints (PEP 561 `py.typed`).
+- Works with OpenAI/Anthropic-style `{"role", "content"}` message dicts, including multi-modal content blocks and `content=None` tool-call messages.
+
 ## Install
 
 ```bash
@@ -74,6 +78,27 @@ def tiktoken_estimator(message: dict) -> int:
     return len(enc.encode(content)) + 4  # +4 for role overhead
 
 trimmer = AgentContextTrim(budget=4096, estimator=tiktoken_estimator)
+```
+
+## Behaviour notes
+
+- Messages are dropped oldest-first from the conversation; the surviving
+  messages keep their original relative order.
+- System messages are pinned by default (`keep_system=True`) and are still
+  counted toward the budget even though they are never dropped. If the pinned
+  messages alone exceed the budget, nothing droppable is left and the result
+  may still be over budget — `trim` never removes protected messages.
+- The default estimator is intentionally tolerant of message shape: a plain
+  string, a `None` content (assistant tool-call turns), or a list of
+  multi-modal content blocks are all handled without raising.
+
+## Running the tests
+
+The test suite uses only the Python standard library (`unittest`), so no
+third-party test runner is required:
+
+```bash
+python3 -m unittest discover -s tests
 ```
 
 ## License
