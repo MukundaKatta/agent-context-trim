@@ -228,6 +228,54 @@ def test_would_drop_none():
     assert t.would_drop([_user(), _asst()]) == 0
 
 
+def test_would_drop_budget_override():
+    t = AgentContextTrim(budget=999, estimator=_fixed_10, keep_last=0)
+    msgs = [_user("A"), _asst("B"), _user("C")]  # 30 tokens
+    assert t.would_drop(msgs, budget=20) == 1
+
+
+def test_fits_budget_override():
+    t = AgentContextTrim(budget=999, estimator=_fixed_10)
+    msgs = [_user("A"), _asst("B"), _user("C")]  # 30 tokens
+    assert t.fits(msgs, budget=5) is False
+    assert t.fits(msgs, budget=999) is True
+
+
+# ---------------------------------------------------------------------------
+# Ordering / pinning interactions
+# ---------------------------------------------------------------------------
+
+
+def test_original_order_preserved_with_mid_system():
+    # A system message in the middle must stay, and surviving messages keep
+    # their original relative order.
+    t = AgentContextTrim(budget=20, estimator=_fixed_10, keep_last=0)
+    msgs = [_user("u1"), _sys("sys"), _user("u2"), _user("u3")]
+    result = t.trim(msgs)
+    contents = [m["content"] for m in result.messages]
+    assert "sys" in contents
+    assert contents == ["sys", "u3"]
+
+
+def test_keep_first_and_last_overlap_protects_all():
+    # When keep_first + keep_last cover the whole conversation, nothing is
+    # droppable even under an impossible budget.
+    t = AgentContextTrim(budget=1, estimator=_fixed_10, keep_first=2, keep_last=2)
+    msgs = [_user("a"), _user("b"), _user("c")]
+    result = t.trim(msgs)
+    assert result.dropped == 0
+    assert len(result.messages) == 3
+
+
+def test_original_count_reflects_pre_trim_length():
+    t = AgentContextTrim(budget=20, estimator=_fixed_10, keep_last=0)
+    msgs = [_user("A"), _asst("B"), _user("C")]
+    result = t.trim(msgs)
+    assert result.original_count == 3
+    assert result.dropped == 1
+    assert len(result.messages) == 2
+
+
 # ---------------------------------------------------------------------------
 # Deep copy behaviour
 # ---------------------------------------------------------------------------
@@ -261,3 +309,20 @@ def test_default_estimator_list_content():
     t = AgentContextTrim(budget=999999)
     msg = {"role": "user", "content": [{"type": "text", "text": "hello world"}]}
     assert t.estimate([msg]) > 0
+
+
+def test_default_estimator_non_string_content():
+    # Non-str, non-list content is coerced via str() before counting.
+    t = AgentContextTrim(budget=999999)
+    assert t.estimate([{"role": "user", "content": 12345}]) > 0
+
+
+def test_default_estimator_missing_content_key():
+    t = AgentContextTrim(budget=999999)
+    assert t.estimate([{"role": "user"}]) > 0
+
+
+def test_custom_estimator_used():
+    # A custom estimator overrides the default and is applied per message.
+    t = AgentContextTrim(budget=999999, estimator=lambda _m: 7)
+    assert t.estimate([_user(), _asst(), _user()]) == 21
