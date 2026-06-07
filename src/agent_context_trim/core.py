@@ -31,19 +31,49 @@ from typing import Any, Callable
 
 
 def _default_estimator(message: dict[str, Any]) -> int:
-    """Heuristic: 1 token ~ 0.75 words; add 4 for role overhead."""
+    """Estimate the token count of a single message.
+
+    Uses a simple heuristic: ``1 token ~= 0.75 words`` plus a flat
+    overhead of ``4`` tokens to approximate the per-message role and
+    delimiter tokens that most chat APIs add.
+
+    The estimator is deliberately forgiving about message shape so it can
+    be applied directly to messages from a variety of providers:
+
+    * ``content`` may be a plain string.
+    * ``content`` may be ``None`` (e.g. an assistant message that only
+      carries ``tool_calls``); this contributes no text, only overhead.
+    * ``content`` may be a list of multi-modal content blocks; only the
+      ``text`` field of each ``dict`` block is counted, and non-string
+      ``text`` values are ignored.
+
+    Args:
+        message: A single ``{"role": ..., "content": ...}`` mapping.
+
+    Returns:
+        The estimated number of tokens for *message* (always ``>= 4``).
+    """
     content = message.get("content", "")
-    if isinstance(content, list):
-        # Multi-modal content block list — count text blocks only
-        text = " ".join(
-            block.get("text", "") for block in content if isinstance(block, dict)
-        )
+    if content is None:
+        text = ""
     elif isinstance(content, str):
         text = content
+    elif isinstance(content, list):
+        # Multi-modal content block list — count text blocks only.
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict):
+                block_text = block.get("text", "")
+                if isinstance(block_text, str):
+                    parts.append(block_text)
+        text = " ".join(parts)
     else:
         text = str(content)
     words = len(text.split())
-    return max(1, int(words / 0.75)) + 4
+    overhead = 4
+    if words == 0:
+        return overhead
+    return int(words / 0.75) + overhead
 
 
 @dataclass
